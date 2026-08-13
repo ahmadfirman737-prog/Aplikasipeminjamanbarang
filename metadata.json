@@ -1,0 +1,10 @@
+{
+  "name": "Sistem Peminjaman Lab Komputer",
+  "description": "Sistem peminjaman dan pengembalian inventaris lab komputer SMP-SMK Kusuma Bangsa Bogor dengan barcode scanner, manajemen barang, kartu guru, dan laporan.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
