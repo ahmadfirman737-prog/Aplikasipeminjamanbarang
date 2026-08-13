@@ -32,6 +32,8 @@ interface AdminDashboardProps {
 
 type AdminMenu = 'kartu' | 'barang' | 'laporan' | 'akun';
 
+const logoUrl = 'https://lh3.googleusercontent.com/d/1wTVRYsGCR8wAuVH8Xv7iu0TOeF2cHDZ9';
+
 export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   db,
   setDb,
@@ -220,6 +222,35 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
   };
 
+  // --- DELETE LAPORAN PEMINJAMAN ---
+  const handleDeleteTransaksi = (id: string) => {
+    const tx = db.transaksis.find((t) => t.id === id);
+    if (!tx) return;
+
+    if (confirm(`Apakah Anda yakin ingin menghapus data peminjaman ${tx.id}?`)) {
+      setDb((prev) => {
+        const sisa = tx.jumlah - (tx.jumlah_kembali || 0);
+        const updatedBarangs = prev.barangs.map((b) => {
+          if (b.kode === tx.barang_kode && sisa > 0) {
+            return {
+              ...b,
+              tersedia: Math.min(b.total_stok, b.tersedia + sisa)
+            };
+          }
+          return b;
+        });
+
+        return {
+          ...prev,
+          barangs: updatedBarangs,
+          transaksis: prev.transaksis.filter((t) => t.id !== id)
+        };
+      });
+
+      showToast(`Data peminjaman ${id} berhasil dihapus`, 'info');
+    }
+  };
+
   // --- EXPORTS ---
   const handleExportExcel = () => {
     try {
@@ -279,13 +310,22 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     <div className="flex h-screen bg-slate-50 w-full text-left overflow-hidden">
       {/* Sidebar Desktop */}
       <aside className="w-64 bg-gradient-to-br from-[#f0f7fb] via-white to-[#e1f0f7]/80 text-gray-800 flex flex-col shadow-xl z-20 hidden md:flex border-r border-[#074A69]/20">
-        <div className="p-6 border-b border-[#074A69]/20 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-[#074A69] text-white flex items-center justify-center shadow-md shadow-[#074A69]/20 shrink-0">
-            <Shield className="w-5 h-5" />
-          </div>
+        <div className="p-5 border-b border-[#074A69]/20 flex flex-col items-start gap-2.5">
+          <img
+            src={logoUrl}
+            alt="Logo Kusuma Bangsa"
+            className="h-6 sm:h-8 w-auto max-w-full object-contain object-left filter drop-shadow-xs"
+            onError={(e) => {
+              (e.target as HTMLElement).style.display = 'none';
+            }}
+          />
           <div>
-            <h2 className="font-extrabold text-base tracking-wide text-gray-900">Admin Panel</h2>
-            <p className="text-xs text-[#074A69] font-semibold">Lab Komputer KB</p>
+            <span className="font-extrabold text-xs sm:text-sm leading-tight text-gray-900 block">
+              Aplikasi Peminjaman Barang
+            </span>
+            <span className="font-medium text-[11px] sm:text-xs leading-tight text-gray-600 block mt-0.5">
+              Laboratorium Komputer
+            </span>
           </div>
         </div>
 
@@ -663,12 +703,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <th className="p-3.5 font-bold text-center">Pinjam / Kembali</th>
                       <th className="p-3.5 font-bold">Tgl Pinjam</th>
                       <th className="p-3.5 font-bold">Status</th>
+                      <th className="p-3.5 font-bold text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="text-xs sm:text-sm divide-y divide-gray-100">
                     {filteredTransaksis.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="p-6 text-center text-gray-400 text-xs">
+                        <td colSpan={7} className="p-6 text-center text-gray-400 text-xs">
                           Belum ada riwayat transaksi yang sesuai.
                         </td>
                       </tr>
@@ -722,6 +763,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               })}
                             </td>
                             <td className="p-3.5">{badge}</td>
+                            <td className="p-3.5 text-center">
+                              <button
+                                onClick={() => handleDeleteTransaksi(tx.id)}
+                                className="bg-rose-50 text-rose-600 hover:bg-rose-100 p-2 rounded-lg transition shadow-2xs cursor-pointer inline-flex items-center justify-center"
+                                title="Hapus Laporan Peminjaman"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })

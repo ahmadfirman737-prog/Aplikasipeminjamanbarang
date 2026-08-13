@@ -40,16 +40,16 @@ export const LoginView: React.FC<LoginViewProps> = ({ users, onLoginSuccess, sho
             <img
               src={logoUrl}
               alt="Logo Kusuma Bangsa"
-              className="w-24 h-24 md:w-28 md:h-28 object-contain filter drop-shadow-md mb-1.5"
+              className="w-28 h-28 md:w-36 md:h-36 object-contain filter drop-shadow-md mb-3"
               onError={(e) => {
                 (e.target as HTMLElement).style.display = 'none';
               }}
             />
 
-            <h1 className="text-2xl md:text-3xl font-black mb-0 tracking-tight leading-tight w-full">
-              Sistem Peminjaman
+            <h1 className="text-xl md:text-2xl font-black mb-0 tracking-tight leading-tight w-full">
+              Aplikasi Peminjaman Barang
             </h1>
-            <h2 className="text-xl md:text-2xl font-bold text-sky-100 mb-3 w-full">Lab Komputer</h2>
+            <h2 className="text-lg md:text-xl font-bold text-sky-100 mb-3 w-full">Laboratorium Komputer</h2>
             <div className="w-16 h-1 bg-sky-400 mb-4 rounded-full"></div>
 
             <p className="font-bold text-xs md:text-sm tracking-wider text-sky-100 uppercase mb-1.5 w-full">
