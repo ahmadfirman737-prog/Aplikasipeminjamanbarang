@@ -105,6 +105,7 @@ export default function App() {
           onLogout={handleLogout}
           onPrintGuruCard={(guru) => setPrintGuruCardModal(guru)}
           showToast={showToast}
+          isFirebaseConnected={isFirebaseConnected}
         />
       ) : (
         <PetugasDashboard
@@ -113,6 +114,7 @@ export default function App() {
           currentUser={currentUser}
           onLogout={handleLogout}
           showToast={showToast}
+          isFirebaseConnected={isFirebaseConnected}
         />
       )}
     </div>

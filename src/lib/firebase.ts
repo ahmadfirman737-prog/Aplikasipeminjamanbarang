@@ -133,11 +133,16 @@ export async function initializeFirestoreDatabase(): Promise<DatabaseState> {
 /**
  * Save complete database state to Firestore
  */
-export async function saveDatabaseToFirestore(data: DatabaseState): Promise<void> {
+export async function saveDatabaseToFirestore(data: DatabaseState): Promise<boolean> {
   try {
-    await setDoc(MAIN_DOC_REF, data);
+    await setDoc(MAIN_DOC_REF, {
+      ...data,
+      lastUpdated: new Date().toISOString()
+    });
+    return true;
   } catch (err) {
     console.error('Error saving to Firestore:', err);
+    return false;
   }
 }
 

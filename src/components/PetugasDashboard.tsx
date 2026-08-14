@@ -14,7 +14,8 @@ import {
   RotateCcw,
   Box,
   Layers,
-  Sparkles
+  Sparkles,
+  Cloud
 } from 'lucide-react';
 
 interface PetugasDashboardProps {
@@ -23,6 +24,7 @@ interface PetugasDashboardProps {
   currentUser: User;
   onLogout: () => void;
   showToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
+  isFirebaseConnected?: boolean;
 }
 
 export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
@@ -30,7 +32,8 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
   setDb,
   currentUser,
   onLogout,
-  showToast
+  showToast,
+  isFirebaseConnected = true
 }) => {
   const [scannedGuru, setScannedGuru] = useState<Guru | null>(null);
   const [manualInputId, setManualInputId] = useState('');
@@ -258,7 +261,37 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
           </div>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 sm:gap-3">
+          <span
+            className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
+              isFirebaseConnected
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                : 'bg-amber-50 text-amber-700 border-amber-200'
+            }`}
+            title={
+              isFirebaseConnected
+                ? 'Terhubung ke Firebase Realtime Database'
+                : 'Menyimpan lokal (menghubungkan ke cloud...)'
+            }
+          >
+            <span className="relative flex h-2 w-2">
+              <span
+                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
+                  isFirebaseConnected ? 'bg-emerald-400' : 'bg-amber-400'
+                }`}
+              ></span>
+              <span
+                className={`relative inline-flex rounded-full h-2 w-2 ${
+                  isFirebaseConnected ? 'bg-emerald-500' : 'bg-amber-500'
+                }`}
+              ></span>
+            </span>
+            <Cloud className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">
+              {isFirebaseConnected ? 'Firebase Realtime' : 'Menghubungkan...'}
+            </span>
+          </span>
+
           <span className="bg-gradient-to-r from-[#f0f7fb] to-[#e1f0f7] text-[#074A69] px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 border border-[#074A69]/30 shadow-2xs">
             <UserCheck className="w-4 h-4 text-[#074A69]" /> {currentUser.name}
           </span>
