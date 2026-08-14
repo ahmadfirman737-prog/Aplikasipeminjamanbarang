@@ -56,12 +56,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Modal States
   const [showAddGuruModal, setShowAddGuruModal] = useState(false);
+  const [showEditGuruModal, setShowEditGuruModal] = useState<Guru | null>(null);
   const [showAddBarangModal, setShowAddBarangModal] = useState(false);
   const [showEditBarangModal, setShowEditBarangModal] = useState<Barang | null>(null);
   const [showAddAkunModal, setShowAddAkunModal] = useState(false);
   const [showEditAkunModal, setShowEditAkunModal] = useState<User | null>(null);
 
-  // Form Fields - Add Guru
+  // Form Fields - Add/Edit Guru
   const [newGuruId, setNewGuruId] = useState('');
   const [newGuruNama, setNewGuruNama] = useState('');
   const [newGuruMapel, setNewGuruMapel] = useState('');
@@ -79,24 +80,72 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [akunPass, setAkunPass] = useState('');
   const [akunRole, setAkunRole] = useState<'admin' | 'petugas'>('petugas');
 
+  // Auto Generate next sequential Guru ID (e.g. KB-001, KB-002...)
+  const handleAutoGenerateGuruId = () => {
+    let maxNum = 0;
+    db.gurus.forEach((g) => {
+      const match = g.id.match(/\d+/);
+      if (match) {
+        const num = parseInt(match[0], 10);
+        if (num > maxNum) maxNum = num;
+      }
+    });
+    const nextNum = String(maxNum + 1).padStart(3, '0');
+    setNewGuruId(`KB-${nextNum}`);
+  };
+
   // --- CRUD GURU ---
   const handleSaveGuru = (e: React.FormEvent) => {
     e.preventDefault();
-    if (db.gurus.some((g) => g.id.toLowerCase() === newGuruId.trim().toLowerCase())) {
+    const cleanId = newGuruId.trim().toUpperCase();
+    if (db.gurus.some((g) => g.id.toUpperCase() === cleanId)) {
       showToast('ID Barcode sudah digunakan oleh guru lain!', 'error');
       return;
     }
 
     const newGuru: Guru = {
-      id: newGuruId.trim().toUpperCase(),
+      id: cleanId,
       nama: newGuruNama.trim(),
       mapel: newGuruMapel.trim(),
       nip: newGuruNip.trim() || undefined
     };
 
     setDb((prev) => ({ ...prev, gurus: [...prev.gurus, newGuru] }));
-    showToast(`Guru ${newGuru.nama} berhasil ditambahkan!`, 'success');
+    showToast(`Guru ${newGuru.nama} (${newGuru.id}) berhasil ditambahkan!`, 'success');
     setShowAddGuruModal(false);
+    setNewGuruId('');
+    setNewGuruNama('');
+    setNewGuruMapel('');
+    setNewGuruNip('');
+  };
+
+  const handleUpdateGuru = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEditGuruModal) return;
+
+    const oldId = showEditGuruModal.id;
+    const cleanId = newGuruId.trim().toUpperCase();
+
+    if (cleanId !== oldId.toUpperCase() && db.gurus.some((g) => g.id.toUpperCase() === cleanId)) {
+      showToast('ID Barcode sudah digunakan oleh guru lain!', 'error');
+      return;
+    }
+
+    const updatedGuru: Guru = {
+      id: cleanId,
+      nama: newGuruNama.trim(),
+      mapel: newGuruMapel.trim(),
+      nip: newGuruNip.trim() || undefined
+    };
+
+    setDb((prev) => ({
+      ...prev,
+      gurus: prev.gurus.map((g) => (g.id === oldId ? updatedGuru : g)),
+      transaksis: prev.transaksis.map((t) => (t.guru_id === oldId ? { ...t, guru_id: cleanId } : t))
+    }));
+
+    showToast(`Data guru ${updatedGuru.nama} berhasil diperbarui!`, 'success');
+    setShowEditGuruModal(null);
     setNewGuruId('');
     setNewGuruNama('');
     setNewGuruMapel('');
@@ -545,6 +594,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <td className="p-3.5">
                             <div className="flex items-center justify-center gap-2">
                               <button
+                                onClick={() => {
+                                  setShowEditGuruModal(g);
+                                  setNewGuruId(g.id);
+                                  setNewGuruNama(g.nama);
+                                  setNewGuruMapel(g.mapel);
+                                  setNewGuruNip(g.nip || '');
+                                }}
+                                className="bg-amber-50 text-amber-700 hover:bg-amber-100 p-2 rounded-lg transition shadow-2xs cursor-pointer"
+                                title="Edit Data Guru"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
                                 onClick={() => onPrintGuruCard(g)}
                                 className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 p-2 rounded-lg transition shadow-2xs font-semibold text-xs flex items-center gap-1 cursor-pointer"
                                 title="Cetak Kartu ID"
@@ -901,18 +963,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       {/* --- MODALS --- */}
 
-      {/* Modal Add Guru */}
-      {showAddGuruModal && (
+      {/* Modal Add / Edit Guru */}
+      {(showAddGuruModal || showEditGuruModal) && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex justify-center items-center p-4">
           <div className="bg-white p-6 rounded-2xl shadow-2xl max-w-sm w-full border border-gray-100">
             <h3 className="font-bold text-base text-gray-900 mb-4 flex items-center gap-2">
-              <Plus className="w-5 h-5 text-[#074A69]" /> Tambah Data Guru Baru
+              <Plus className="w-5 h-5 text-[#074A69]" />
+              {showEditGuruModal ? 'Edit Data Guru' : 'Tambah Data Guru Baru'}
             </h3>
-            <form onSubmit={handleSaveGuru} className="space-y-3.5">
+            <form onSubmit={showEditGuruModal ? handleUpdateGuru : handleSaveGuru} className="space-y-3.5">
               <div>
-                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
-                  ID Barcode Kartu
-                </label>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider">
+                    ID Barcode Kartu
+                  </label>
+                  {!showEditGuruModal && (
+                    <button
+                      type="button"
+                      onClick={handleAutoGenerateGuruId}
+                      className="text-[10px] text-[#074A69] hover:underline font-bold cursor-pointer"
+                    >
+                      + Generate ID
+                    </button>
+                  )}
+                </div>
                 <input
                   type="text"
                   value={newGuruId}
@@ -921,6 +995,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   className="w-full border border-[#074A69]/20 p-2.5 rounded-xl text-xs sm:text-sm focus:border-[#074A69] outline-none font-mono font-bold uppercase"
                   required
                 />
+                <p className="text-[10px] text-gray-400 mt-0.5">Format standar: KB-001, KB-002, dst.</p>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wider mb-1">
@@ -964,7 +1039,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
               <div className="flex gap-2 justify-end mt-4 pt-3 border-t border-gray-100">
                 <button
                   type="button"
-                  onClick={() => setShowAddGuruModal(false)}
+                  onClick={() => {
+                    setShowAddGuruModal(false);
+                    setShowEditGuruModal(null);
+                  }}
                   className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-xs transition cursor-pointer"
                 >
                   Batal
@@ -973,7 +1051,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   type="submit"
                   className="px-4 py-2 bg-gradient-to-r from-[#074A69] to-[#0c618c] text-white font-semibold rounded-xl text-xs transition shadow-md cursor-pointer"
                 >
-                  Simpan Data Guru
+                  {showEditGuruModal ? 'Perbarui Data Guru' : 'Simpan Data Guru'}
                 </button>
               </div>
             </form>

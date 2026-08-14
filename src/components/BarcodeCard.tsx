@@ -12,13 +12,15 @@ export const BarcodeCard: React.FC<BarcodeCardProps> = ({ code, className = '' }
   useEffect(() => {
     if (svgRef.current && code) {
       try {
-        JsBarcode(svgRef.current, code, {
+        const cleanCode = String(code).trim().toUpperCase();
+        JsBarcode(svgRef.current, cleanCode, {
           format: 'CODE128',
-          lineColor: '#074A69',
-          width: 1.8,
-          height: 38,
+          lineColor: '#000000', // standard black for highest optical reader contrast
+          width: 2,
+          height: 44,
           displayValue: false,
-          margin: 0
+          margin: 6,
+          background: '#ffffff'
         });
       } catch (err) {
         console.error('JsBarcode rendering error:', err);
@@ -28,3 +30,4 @@ export const BarcodeCard: React.FC<BarcodeCardProps> = ({ code, className = '' }
 
   return <svg ref={svgRef} className={className}></svg>;
 };
+

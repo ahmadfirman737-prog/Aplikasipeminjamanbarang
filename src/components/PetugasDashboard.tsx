@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { DatabaseState, Guru, User, Transaksi, Barang } from '../types';
 import { CameraScanner } from './CameraScanner';
 import {
@@ -15,7 +15,10 @@ import {
   Box,
   Layers,
   Sparkles,
-  Cloud
+  Cloud,
+  Users,
+  X,
+  Check
 } from 'lucide-react';
 
 interface PetugasDashboardProps {
@@ -25,6 +28,58 @@ interface PetugasDashboardProps {
   onLogout: () => void;
   showToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
   isFirebaseConnected?: boolean;
+}
+
+// Smart lookup function for Guru
+export function findGuruSmart(query: string, gurus: Guru[]): Guru | undefined {
+  const raw = (query || '').trim();
+  if (!raw) return undefined;
+
+  const upper = raw.toUpperCase();
+  const cleanAlphanumeric = upper.replace(/[^A-Z0-9]/g, '');
+
+  // 1. Exact ID match (case-insensitive, trimmed)
+  let match = gurus.find((g) => g.id.trim().toUpperCase() === upper);
+  if (match) return match;
+
+  // 2. Alphanumeric normalized match (e.g. "KB001" or "KB 001" matches "KB-001")
+  if (cleanAlphanumeric.length >= 2) {
+    match = gurus.find((g) => {
+      const gClean = g.id.replace(/[^A-Z0-9]/g, '').toUpperCase();
+      return gClean === cleanAlphanumeric;
+    });
+    if (match) return match;
+  }
+
+  // 3. Partial end match for numeric suffixes (e.g. "001" or "01" matching "KB-001")
+  const numericOnly = raw.replace(/[^0-9]/g, '');
+  if (numericOnly.length >= 2) {
+    match = gurus.find((g) => {
+      const gNum = g.id.replace(/[^0-9]/g, '');
+      return gNum === numericOnly || gNum.endsWith(numericOnly);
+    });
+    if (match) return match;
+  }
+
+  // 4. Match by NIP
+  if (numericOnly.length >= 4) {
+    match = gurus.find((g) => {
+      if (!g.nip) return false;
+      const nipDigits = g.nip.replace(/[^0-9]/g, '');
+      return nipDigits.includes(numericOnly);
+    });
+    if (match) return match;
+  }
+
+  // 5. Match by Nama (case-insensitive)
+  const lower = raw.toLowerCase();
+  match = gurus.find((g) => g.nama.toLowerCase() === lower);
+  if (match) return match;
+
+  const partialName = gurus.filter((g) => g.nama.toLowerCase().includes(lower));
+  if (partialName.length === 1) return partialName[0];
+
+  return undefined;
 }
 
 export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
@@ -37,6 +92,8 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
 }) => {
   const [scannedGuru, setScannedGuru] = useState<Guru | null>(null);
   const [manualInputId, setManualInputId] = useState('');
+  const [showGuruPickerModal, setShowGuruPickerModal] = useState(false);
+  const [guruPickerSearch, setGuruPickerSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'pinjam' | 'kembali'>('pinjam');
 
   // Selected items for borrowing: { [kodeBarang]: quantity }
@@ -45,17 +102,34 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
   // Selected transactions for return: { [trxId]: returnQuantity }
   const [returnSelection, setReturnSelection] = useState<Record<string, number>>({});
 
+  // Barcode scanner buffer for USB / Physical barcode guns
+  const scanBufferRef = useRef<string>('');
+  const lastKeyTimeRef = useRef<number>(0);
+
+  // Live matching suggestions for manual input
+  const suggestions = useMemo(() => {
+    const q = manualInputId.trim().toLowerCase();
+    if (!q || q.length < 1) return [];
+    return db.gurus.filter((g) => {
+      const idMatch = g.id.toLowerCase().includes(q) || g.id.replace(/[^a-z0-9]/g, '').includes(q);
+      const nameMatch = g.nama.toLowerCase().includes(q);
+      const mapelMatch = g.mapel.toLowerCase().includes(q);
+      const nipMatch = g.nip ? g.nip.replace(/[^0-9]/g, '').includes(q.replace(/[^0-9]/g, '')) : false;
+      return idMatch || nameMatch || mapelMatch || nipMatch;
+    }).slice(0, 4);
+  }, [manualInputId, db.gurus]);
+
   // Scan Teacher Handler
   const handleBarcodeScanned = (id: string) => {
-    const cleanId = id.trim().toUpperCase();
-    const guru = db.gurus.find((g) => g.id.toUpperCase() === cleanId);
+    const guru = findGuruSmart(id, db.gurus);
 
     if (guru) {
       setScannedGuru(guru);
-      showToast(`Kartu dikenali: ${guru.nama}`, 'success');
+      showToast(`Kartu dikenali: ${guru.nama} (${guru.id})`, 'success');
       setReturnSelection({});
+      setManualInputId('');
     } else {
-      showToast(`ID Barcode "${cleanId}" tidak terdaftar di sistem!`, 'error');
+      showToast(`ID / Barcode "${id.trim()}" tidak ditemukan dalam sistem!`, 'error');
     }
   };
 
@@ -63,8 +137,15 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
     e.preventDefault();
     if (manualInputId.trim()) {
       handleBarcodeScanned(manualInputId);
-      setManualInputId('');
     }
+  };
+
+  const handleSelectGuruDirect = (guru: Guru) => {
+    setScannedGuru(guru);
+    showToast(`Guru dipilih: ${guru.nama} (${guru.id})`, 'success');
+    setReturnSelection({});
+    setManualInputId('');
+    setShowGuruPickerModal(false);
   };
 
   const handleResetScannedGuru = () => {
@@ -73,6 +154,35 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
     setReturnSelection({});
     setActiveTab('pinjam');
   };
+
+  // Listen for USB / Hardware Barcode Reader
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'TEXTAREA' || (target.tagName === 'INPUT' && (target as HTMLInputElement).type === 'password'))) {
+        return;
+      }
+
+      const now = Date.now();
+      if (now - lastKeyTimeRef.current > 150) {
+        scanBufferRef.current = '';
+      }
+      lastKeyTimeRef.current = now;
+
+      if (e.key === 'Enter') {
+        if (scanBufferRef.current.length >= 3) {
+          handleBarcodeScanned(scanBufferRef.current);
+          scanBufferRef.current = '';
+          e.preventDefault();
+        }
+      } else if (e.key.length === 1) {
+        scanBufferRef.current += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [db.gurus]);
 
   // Toggle selection for borrowing
   const handleToggleBorrowBarang = (kode: string, maxQty: number) => {
@@ -314,24 +424,59 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
               <CameraScanner onScanSuccess={handleBarcodeScanned} />
 
               {/* Manual Input Input Form */}
-              <form onSubmit={handleManualScanSubmit} className="relative mt-4">
-                <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#074A69]">
-                  <Barcode className="w-4 h-4" />
-                </div>
-                <input
-                  type="text"
-                  value={manualInputId}
-                  onChange={(e) => setManualInputId(e.target.value)}
-                  placeholder="Manual Input ID (Cth: KB-001)..."
-                  className="w-full pl-10 pr-16 border border-[#074A69]/20 rounded-xl p-2.5 text-xs font-mono font-bold focus:border-[#074A69] focus:ring-2 focus:ring-[#074A69]/20 bg-white outline-none"
-                />
+              <div className="relative mt-4">
+                <form onSubmit={handleManualScanSubmit} className="relative">
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-[#074A69]">
+                    <Barcode className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={manualInputId}
+                    onChange={(e) => setManualInputId(e.target.value)}
+                    placeholder="Input ID / NIP / Nama Guru..."
+                    className="w-full pl-10 pr-16 border border-[#074A69]/20 rounded-xl p-2.5 text-xs font-mono font-bold focus:border-[#074A69] focus:ring-2 focus:ring-[#074A69]/20 bg-white outline-none"
+                  />
+                  <button
+                    type="submit"
+                    className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-[#074A69] text-white text-xs font-bold rounded-lg hover:bg-[#05364d] transition cursor-pointer"
+                  >
+                    Proses
+                  </button>
+                </form>
+
+                {/* Instant Suggestions Dropdown */}
+                {suggestions.length > 0 && (
+                  <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl z-30 overflow-hidden divide-y divide-gray-100">
+                    {suggestions.map((g) => (
+                      <button
+                        key={g.id}
+                        type="button"
+                        onClick={() => handleSelectGuruDirect(g)}
+                        className="w-full p-2.5 text-left hover:bg-[#f0f7fb] flex items-center justify-between transition cursor-pointer"
+                      >
+                        <div>
+                          <p className="text-xs font-bold text-gray-900">{g.nama}</p>
+                          <p className="text-[10px] text-gray-500">{g.mapel}</p>
+                        </div>
+                        <span className="text-xs font-mono font-bold text-[#074A69] bg-sky-50 px-2 py-0.5 rounded">
+                          {g.id}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Quick Pick Guru Button */}
+              <div className="mt-3">
                 <button
-                  type="submit"
-                  className="absolute right-1.5 top-1.5 bottom-1.5 px-3 bg-[#074A69] text-white text-xs font-bold rounded-lg hover:bg-[#05364d] transition cursor-pointer"
+                  type="button"
+                  onClick={() => setShowGuruPickerModal(true)}
+                  className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-gray-700 font-semibold rounded-xl text-xs flex items-center justify-center gap-2 transition cursor-pointer border border-gray-200"
                 >
-                  Proses
+                  <Users className="w-3.5 h-3.5 text-[#074A69]" /> Pilih Guru Dari Daftar ({db.gurus.length})
                 </button>
-              </form>
+              </div>
             </div>
           </div>
 
@@ -643,6 +788,75 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
           )}
         </div>
       </main>
+
+      {/* Modal Quick Pick Guru */}
+      {showGuruPickerModal && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-xs z-50 flex justify-center items-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-6 border border-gray-100 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between pb-3 border-b border-gray-100">
+              <h3 className="font-bold text-base text-gray-900 flex items-center gap-2">
+                <Users className="w-5 h-5 text-[#074A69]" /> Pilih Guru Peminjam
+              </h3>
+              <button
+                onClick={() => setShowGuruPickerModal(false)}
+                className="w-8 h-8 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-600 flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="my-3.5 relative">
+              <Search className="w-4 h-4 absolute left-3.5 top-3 text-gray-400" />
+              <input
+                type="text"
+                value={guruPickerSearch}
+                onChange={(e) => setGuruPickerSearch(e.target.value)}
+                placeholder="Cari berdasarkan nama, mapel, atau ID Barcode..."
+                className="pl-10 w-full bg-[#f0f7fb]/50 border border-gray-200 rounded-xl p-2.5 text-xs sm:text-sm focus:border-[#074A69] focus:ring-2 focus:ring-[#074A69]/20 outline-none"
+                autoFocus
+              />
+            </div>
+
+            <div className="overflow-y-auto flex-1 divide-y divide-gray-100 pr-1 max-h-[380px]">
+              {db.gurus
+                .filter((g) => {
+                  const q = guruPickerSearch.trim().toLowerCase();
+                  if (!q) return true;
+                  return (
+                    g.nama.toLowerCase().includes(q) ||
+                    g.id.toLowerCase().includes(q) ||
+                    g.mapel.toLowerCase().includes(q) ||
+                    (g.nip && g.nip.includes(q))
+                  );
+                })
+                .map((g) => (
+                  <div
+                    key={g.id}
+                    onClick={() => handleSelectGuruDirect(g)}
+                    className="p-3 hover:bg-[#f0f7fb] rounded-xl flex items-center justify-between transition cursor-pointer group"
+                  >
+                    <div>
+                      <h4 className="text-sm font-bold text-gray-900 group-hover:text-[#074A69] transition">
+                        {g.nama}
+                      </h4>
+                      <p className="text-xs text-gray-500">
+                        {g.mapel} {g.nip ? `• NIP: ${g.nip}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-mono font-bold text-[#074A69] bg-sky-50 px-2.5 py-1 rounded-lg border border-sky-100">
+                        {g.id}
+                      </span>
+                      <span className="w-8 h-8 rounded-lg bg-[#074A69] text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition shadow-xs">
+                        <Check className="w-4 h-4" />
+                      </span>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
