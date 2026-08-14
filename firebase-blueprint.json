@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "users": {
+      "title": "Users",
+      "description": "User credentials and roles",
+      "properties": {
+        "username": { "type": "string" },
+        "name": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "petugas"] },
+        "password": { "type": "string" }
+      },
+      "required": ["username", "name", "role"]
+    },
+    "gurus": {
+      "title": "Gurus",
+      "description": "Teacher data and barcode IDs",
+      "properties": {
+        "id": { "type": "string" },
+        "nama": { "type": "string" },
+        "mapel": { "type": "string" },
+        "nip": { "type": "string" }
+      },
+      "required": ["id", "nama", "mapel"]
+    },
+    "barangs": {
+      "title": "Barangs",
+      "description": "Inventory items in computer lab",
+      "properties": {
+        "kode": { "type": "string" },
+        "nama": { "type": "string" },
+        "kategori": { "type": "string" },
+        "total_stok": { "type": "number" },
+        "tersedia": { "type": "number" }
+      },
+      "required": ["kode", "nama", "kategori", "total_stok", "tersedia"]
+    },
+    "transaksis": {
+      "title": "Transaksis",
+      "description": "Borrowing and return transactions",
+      "properties": {
+        "id": { "type": "string" },
+        "guru_id": { "type": "string" },
+        "barang_kode": { "type": "string" },
+        "jumlah": { "type": "number" },
+        "jumlah_kembali": { "type": "number" },
+        "tgl_pinjam": { "type": "string" },
+        "tgl_kembali": { "type": "string" },
+        "status": { "type": "string", "enum": ["aktif", "selesai"] }
+      },
+      "required": ["id", "guru_id", "barang_kode", "jumlah", "tgl_pinjam", "status"]
+    }
+  }
+}

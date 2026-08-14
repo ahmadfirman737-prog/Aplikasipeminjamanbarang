@@ -1,6 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { DatabaseState, User, ToastMessage, ToastType, Guru } from './types';
 import { loadDatabase, saveDatabase } from './lib/storage';
+import { subscribeToFirestore, saveDatabaseToFirestore, initializeFirestoreDatabase } from './lib/firebase';
 import { LoginView } from './components/LoginView';
 import { AdminDashboard } from './components/AdminDashboard';
 import { PetugasDashboard } from './components/PetugasDashboard';
@@ -8,15 +9,54 @@ import { PrintIdCardModal } from './components/PrintIdCardModal';
 import { ToastContainer } from './components/ToastContainer';
 
 export default function App() {
-  const [db, setDb] = useState<DatabaseState>(() => loadDatabase());
+  const [db, setDbState] = useState<DatabaseState>(() => loadDatabase());
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [toasts, setToasts] = useState<ToastMessage[]>([]);
   const [printGuruCardModal, setPrintGuruCardModal] = useState<Guru | null>(null);
+  const [isFirebaseConnected, setIsFirebaseConnected] = useState<boolean>(false);
+  const isInternalUpdateRef = useRef<boolean>(false);
 
-  // Sync state changes to localStorage automatically
+  // Initialize and subscribe to real-time Firestore database
   useEffect(() => {
-    saveDatabase(db);
-  }, [db]);
+    let unsubscribe: (() => void) | undefined;
+
+    const setupFirebase = async () => {
+      try {
+        await initializeFirestoreDatabase();
+        unsubscribe = subscribeToFirestore(
+          (cloudDb) => {
+            isInternalUpdateRef.current = true;
+            setDbState(cloudDb);
+            saveDatabase(cloudDb);
+            setIsFirebaseConnected(true);
+          },
+          (err) => {
+            console.warn('Firestore offline fallback to localStorage:', err);
+            setIsFirebaseConnected(false);
+          }
+        );
+      } catch (err) {
+        console.error('Failed to setup Firebase real-time sync:', err);
+        setIsFirebaseConnected(false);
+      }
+    };
+
+    setupFirebase();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
+  }, []);
+
+  // Custom setDb wrapper that updates local state and pushes immediately to Firebase Firestore
+  const setDb: React.Dispatch<React.SetStateAction<DatabaseState>> = (action) => {
+    setDbState((prevDb) => {
+      const nextDb = typeof action === 'function' ? action(prevDb) : action;
+      saveDatabase(nextDb);
+      saveDatabaseToFirestore(nextDb);
+      return nextDb;
+    });
+  };
 
   const showToast = (message: string, type: ToastType = 'success') => {
     const id = Math.random().toString(36).substring(2, 9);
