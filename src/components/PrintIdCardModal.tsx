@@ -15,8 +15,6 @@ export const PrintIdCardModal: React.FC<PrintIdCardModalProps> = ({ guru, onClos
     window.print();
   };
 
-  const logoUrl = 'https://lh3.googleusercontent.com/d/1feiKQBBJNFoZm9ijocebq7BnVg2N5Qm4';
-
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100 flex flex-col items-center">
@@ -32,33 +30,25 @@ export const PrintIdCardModal: React.FC<PrintIdCardModalProps> = ({ guru, onClos
           </button>
         </div>
 
-        {/* Realistic Standard ID Card Dimensions (8.56cm x 5.398cm => ~323px x 204px) */}
-        <div className="id-card-preview border-2 border-[#074A69] rounded-xl overflow-hidden shadow-xl bg-gradient-to-br from-white via-[#f0f7fb] to-[#e1f0f7] w-[324px] h-[204px] flex flex-col justify-between p-2.5 relative my-4">
-          <div className="bg-gradient-to-r from-[#074A69] to-[#05364d] text-white text-[10px] font-bold tracking-wide uppercase px-2 py-1 rounded-t-lg flex items-center justify-center gap-1.5 shadow-xs">
+        {/* Realistic Standard ID Card Dimensions (8.56cm x 5.398cm => ~324px x 204px) */}
+        <div className="id-card-preview border-2 border-[#074A69] rounded-xl overflow-hidden shadow-xl bg-gradient-to-br from-white via-[#f0f7fb] to-[#e1f0f7] w-[324px] h-[204px] flex flex-col justify-between p-3 relative my-4">
+          <div className="bg-gradient-to-r from-[#074A69] to-[#05364d] text-white text-[10px] font-bold tracking-wide uppercase px-2.5 py-1.5 rounded-lg flex items-center justify-center gap-1.5 shadow-xs">
             <GraduationCap className="w-3.5 h-3.5 text-sky-300" /> KUSUMA BANGSA BOGOR
           </div>
 
-          <div className="flex-1 flex flex-col items-center justify-center my-1 text-center">
-            <img
-              src={logoUrl}
-              alt="Logo KB"
-              className="w-10 h-10 object-contain mb-1"
-              onError={(e) => {
-                (e.target as HTMLElement).style.display = 'none';
-              }}
-            />
-            <h4 className="text-xs font-bold text-[#05364d] leading-tight max-w-[280px] truncate">
+          <div className="flex-1 flex flex-col items-center justify-center my-2 text-center">
+            <h4 className="text-sm font-bold text-[#05364d] leading-snug max-w-[280px] truncate">
               {guru.nama}
             </h4>
-            <p className="text-[9px] text-[#074A69] font-bold uppercase tracking-wider mb-1">
-              {guru.mapel}
+            <p className="text-[10px] text-[#074A69] font-bold uppercase tracking-wider mb-2">
+              {guru.mapel} {guru.nip ? `• NIP. ${guru.nip}` : ''}
             </p>
 
-            <div className="bg-white p-1 rounded border border-gray-200 shadow-2xs w-full max-w-[260px] flex justify-center items-center">
-              <BarcodeCard code={guru.id} className="w-full max-h-[38px]" />
+            <div className="bg-white px-3 py-1.5 rounded-lg border border-gray-200 shadow-2xs w-full max-w-[260px] flex justify-center items-center">
+              <BarcodeCard code={guru.id} className="w-full max-h-[42px]" />
             </div>
 
-            <p className="text-[9px] font-mono font-bold text-gray-600 mt-1">{guru.id}</p>
+            <p className="text-[10px] font-mono font-bold text-gray-600 mt-1.5 tracking-wider">{guru.id}</p>
           </div>
         </div>
 
