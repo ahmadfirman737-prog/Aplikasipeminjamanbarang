@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { DatabaseState, Guru, Barang, User } from '../types';
 import { exportLaporanToExcel, exportLaporanToPDF } from '../lib/export';
+import { saveDatabaseToFirestore } from '../lib/firebase';
+import { downloadSingleCardPNG, downloadAllCardsPDF } from '../lib/cardExport';
 import {
   IdCard,
   Package,
@@ -20,7 +22,10 @@ import {
   RotateCcw,
   ShieldCheck,
   Cloud,
-  Wifi
+  Wifi,
+  RefreshCw,
+  Download,
+  FileDown
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -359,6 +364,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     return matchSearch && matchStatus;
   });
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncCloud = async () => {
+    setIsSyncing(true);
+    try {
+      const ok = await saveDatabaseToFirestore(db);
+      if (ok) {
+        showToast(
+          `Semua data (${db.gurus.length} Kartu Guru) tersimpan permanen di Firebase Cloud!`,
+          'success'
+        );
+      } else {
+        showToast('Gagal sinkronisasi ke Firebase. Periksa koneksi internet.', 'error');
+      }
+    } catch {
+      showToast('Gagal sinkronisasi ke Firebase.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="flex h-screen bg-slate-50 w-full text-left overflow-hidden">
       {/* Sidebar Desktop */}
@@ -456,35 +482,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
 
             <div className="flex items-center gap-2.5 sm:gap-3">
-              <span
-                className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
+              <button
+                onClick={handleSyncCloud}
+                disabled={isSyncing}
+                className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold border flex items-center gap-1.5 shadow-2xs transition cursor-pointer ${
                   isFirebaseConnected
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    : 'bg-amber-50 text-amber-700 border-amber-200'
+                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                    : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
                 }`}
-                title={
-                  isFirebaseConnected
-                    ? 'Terhubung ke Firebase Realtime Database'
-                    : 'Menyimpan lokal (menghubungkan ke cloud...)'
-                }
+                title="Klik untuk sinkronkan seluruh data kartu guru & transaksi ke Firebase Cloud"
               >
-                <span className="relative flex h-2 w-2">
-                  <span
-                    className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                      isFirebaseConnected ? 'bg-emerald-400' : 'bg-amber-400'
-                    }`}
-                  ></span>
-                  <span
-                    className={`relative inline-flex rounded-full h-2 w-2 ${
-                      isFirebaseConnected ? 'bg-emerald-500' : 'bg-amber-500'
-                    }`}
-                  ></span>
-                </span>
-                <Cloud className="w-3.5 h-3.5" />
+                <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
                 <span className="hidden sm:inline">
-                  {isFirebaseConnected ? 'Firebase Realtime' : 'Menghubungkan...'}
+                  {isSyncing ? 'Menyimpan ke Cloud...' : isFirebaseConnected ? 'Tersinkron Cloud' : 'Sinkronkan Data'}
                 </span>
-              </span>
+              </button>
 
               <span className="bg-gradient-to-r from-[#f0f7fb] to-[#e1f0f7] text-[#074A69] px-3.5 py-1.5 rounded-full text-xs font-extrabold border border-[#074A69]/30 flex items-center gap-1.5 shadow-2xs">
                 <ShieldCheck className="w-4 h-4 text-[#074A69]" /> {currentUser.name}
@@ -542,15 +554,33 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div>
                   <h3 className="text-base sm:text-lg font-bold text-gray-900">Daftar Guru & Barcode Access</h3>
                   <p className="text-xs text-gray-500 mt-0.5">
-                    Kelola data guru dan cetak kartu akses barcode untuk peminjaman lab.
+                    Kelola data guru, cetak, atau unduh file kartu akses barcode (PNG/PDF) untuk peminjaman lab.
                   </p>
                 </div>
-                <button
-                  onClick={() => setShowAddGuruModal(true)}
-                  className="bg-gradient-to-r from-[#074A69] to-[#0c618c] hover:from-[#05364d] hover:to-[#074A69] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-[#074A69]/20 flex items-center gap-2 cursor-pointer"
-                >
-                  <Plus className="w-4 h-4" /> Tambah Guru
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={() => {
+                      try {
+                        downloadAllCardsPDF(db.gurus);
+                        showToast(`Berhasil mengunduh ${db.gurus.length} kartu dalam lembar cetak PDF A4!`, 'success');
+                      } catch (err) {
+                        showToast('Gagal mengunduh PDF kartu.', 'error');
+                      }
+                    }}
+                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 px-3.5 py-2.5 rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+                    title="Download semua kartu guru dalam format PDF A4 siap print & gunting"
+                  >
+                    <FileDown className="w-4 h-4 text-emerald-600" />
+                    <span>Download Semua (PDF A4)</span>
+                  </button>
+
+                  <button
+                    onClick={() => setShowAddGuruModal(true)}
+                    className="bg-gradient-to-r from-[#074A69] to-[#0c618c] hover:from-[#05364d] hover:to-[#074A69] text-white px-4 py-2.5 rounded-xl text-xs font-bold transition shadow-md shadow-[#074A69]/20 flex items-center gap-2 cursor-pointer"
+                  >
+                    <Plus className="w-4 h-4" /> Tambah Guru
+                  </button>
+                </div>
               </div>
 
               {/* Search Bar */}
@@ -592,7 +622,21 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <td className="p-3.5 text-gray-600">{g.mapel}</td>
                           <td className="p-3.5 text-gray-400 font-mono text-xs">{g.nip || '-'}</td>
                           <td className="p-3.5">
-                            <div className="flex items-center justify-center gap-2">
+                            <div className="flex items-center justify-center gap-1.5 sm:gap-2">
+                              <button
+                                onClick={() => {
+                                  try {
+                                    downloadSingleCardPNG(g);
+                                    showToast(`Kartu ${g.nama} (${g.id}) berhasil diunduh (PNG)!`, 'success');
+                                  } catch (err) {
+                                    showToast('Gagal mengunduh kartu.', 'error');
+                                  }
+                                }}
+                                className="bg-emerald-50 text-emerald-700 hover:bg-emerald-100 p-2 rounded-lg transition shadow-2xs font-semibold text-xs flex items-center gap-1 cursor-pointer"
+                                title="Download Kartu PNG (HD)"
+                              >
+                                <Download className="w-4 h-4" />
+                              </button>
                               <button
                                 onClick={() => {
                                   setShowEditGuruModal(g);
@@ -609,7 +653,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <button
                                 onClick={() => onPrintGuruCard(g)}
                                 className="bg-indigo-50 text-indigo-700 hover:bg-indigo-100 p-2 rounded-lg transition shadow-2xs font-semibold text-xs flex items-center gap-1 cursor-pointer"
-                                title="Cetak Kartu ID"
+                                title="Cetak / Preview Kartu ID"
                               >
                                 <Printer className="w-4 h-4" /> <span className="hidden sm:inline">Cetak</span>
                               </button>

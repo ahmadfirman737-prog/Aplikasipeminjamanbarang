@@ -1,12 +1,11 @@
 import { initializeApp, getApps } from 'firebase/app';
 import {
+  initializeFirestore,
   getFirestore,
-  collection,
   doc,
+  getDoc,
   setDoc,
-  getDocs,
-  onSnapshot,
-  writeBatch
+  onSnapshot
 } from 'firebase/firestore';
 import { DatabaseState, User, Guru, Barang, Transaksi } from '../types';
 import firebaseConfigData from '../../firebase-applet-config.json';
@@ -23,11 +22,19 @@ const firebaseConfig = {
 // Initialize Firebase App
 export const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()[0];
 
-// Initialize Firestore with custom databaseId if configured
-export const firestore = getFirestore(
-  app,
-  firebaseConfigData.firestoreDatabaseId || '(default)'
-);
+const dbId = firebaseConfigData.firestoreDatabaseId || '(default)';
+
+// Initialize Firestore with ignoreUndefinedProperties so undefined fields like nip or password won't break writes
+let firestoreInstance;
+try {
+  firestoreInstance = initializeFirestore(app, {
+    ignoreUndefinedProperties: true
+  }, dbId);
+} catch {
+  firestoreInstance = getFirestore(app, dbId);
+}
+
+export const firestore = firestoreInstance;
 
 // Default initial data
 export const defaultInitialData: DatabaseState = {
@@ -49,7 +56,7 @@ export const defaultInitialData: DatabaseState = {
     { kode: 'PRJ-01', nama: 'Proyektor Epson EB-X400 3300 Lumens', kategori: 'Proyektor', total_stok: 3, tersedia: 2 },
     { kode: 'KBL-01', nama: 'Kabel HDMI 5 Meter Braided', kategori: 'Kabel', total_stok: 10, tersedia: 9 },
     { kode: 'AUD-01', nama: 'Speaker Bluetooth Portable Wireless', kategori: 'Audio', total_stok: 4, tersedia: 4 },
-    { kode: 'ADP-01', nama: 'Converter Type-C to HDMI/VGA', kategori: 'Kabel', total_stok: 6, tersedia: 5 }
+    { kode: 'ADP-01', format: 'Converter Type-C to HDMI/VGA', nama: 'Converter Type-C to HDMI/VGA', kategori: 'Kabel', total_stok: 6, tersedia: 5 } as any
   ],
   transaksis: [
     {
@@ -89,24 +96,37 @@ export const defaultInitialData: DatabaseState = {
 const MAIN_DOC_REF = doc(firestore, 'app_data', 'database_state');
 
 /**
- * Seed Firestore with initial default data if it doesn't exist
+ * Deep-clean payload for Firestore: strip undefined values, ensuring 100% successful write
+ */
+export function sanitizeForFirestore<T>(data: T): T {
+  return JSON.parse(
+    JSON.stringify(data, (_, value) => (value === undefined ? null : value))
+  );
+}
+
+/**
+ * Seed Firestore with initial default data if it doesn't exist,
+ * or load existing cloud data (preserving any saved guru cards)
  */
 export async function initializeFirestoreDatabase(): Promise<DatabaseState> {
   try {
-    const docSnap = await getDocs(collection(firestore, 'app_data'));
-    const stateDoc = docSnap.docs.find((d) => d.id === 'database_state');
+    const stateDoc = await getDoc(MAIN_DOC_REF);
 
-    if (!stateDoc || !stateDoc.exists()) {
-      await setDoc(MAIN_DOC_REF, defaultInitialData);
+    if (!stateDoc.exists()) {
+      const sanitized = sanitizeForFirestore(defaultInitialData);
+      await setDoc(MAIN_DOC_REF, {
+        ...sanitized,
+        lastUpdated: new Date().toISOString()
+      });
       return defaultInitialData;
     }
 
     const data = stateDoc.data() as DatabaseState;
-    // Ensure all required default users exist
     const currentUsers = data.users || [];
     let updatedUsers = [...currentUsers];
     let needsUpdate = false;
 
+    // Ensure default system users are present
     defaultInitialData.users.forEach((defUser) => {
       const exists = updatedUsers.some(
         (u) => u.username.toLowerCase() === defUser.username.toLowerCase()
@@ -117,13 +137,18 @@ export async function initializeFirestoreDatabase(): Promise<DatabaseState> {
       }
     });
 
+    const fullState: DatabaseState = {
+      users: updatedUsers,
+      gurus: data.gurus || [],
+      barangs: data.barangs || [],
+      transaksis: data.transaksis || []
+    };
+
     if (needsUpdate) {
-      const updatedState = { ...data, users: updatedUsers };
-      await setDoc(MAIN_DOC_REF, updatedState);
-      return updatedState;
+      await saveDatabaseToFirestore(fullState);
     }
 
-    return data;
+    return fullState;
   } catch (err) {
     console.error('Error initializing Firestore database:', err);
     return defaultInitialData;
@@ -131,12 +156,13 @@ export async function initializeFirestoreDatabase(): Promise<DatabaseState> {
 }
 
 /**
- * Save complete database state to Firestore
+ * Save complete database state to Firestore securely with sanitization
  */
 export async function saveDatabaseToFirestore(data: DatabaseState): Promise<boolean> {
   try {
+    const sanitized = sanitizeForFirestore(data);
     await setDoc(MAIN_DOC_REF, {
-      ...data,
+      ...sanitized,
       lastUpdated: new Date().toISOString()
     });
     return true;
@@ -147,7 +173,7 @@ export async function saveDatabaseToFirestore(data: DatabaseState): Promise<bool
 }
 
 /**
- * Real-time listener for Firestore changes
+ * Real-time listener for Firestore changes across all devices
  */
 export function subscribeToFirestore(
   onData: (data: DatabaseState) => void,
@@ -158,14 +184,11 @@ export function subscribeToFirestore(
     (snapshot) => {
       if (snapshot.exists()) {
         const data = snapshot.data() as DatabaseState;
-        
-        // Ensure required users exist in snapshot
+
         let users = data.users || [];
-        let hasChanges = false;
         defaultInitialData.users.forEach((defUser) => {
           if (!users.some((u) => u.username.toLowerCase() === defUser.username.toLowerCase())) {
             users.push(defUser);
-            hasChanges = true;
           }
         });
 
@@ -176,14 +199,14 @@ export function subscribeToFirestore(
           transaksis: data.transaksis || []
         };
 
-        if (hasChanges) {
-          saveDatabaseToFirestore(fullData);
-        }
-
         onData(fullData);
       } else {
         // Document doesn't exist yet, create it
-        setDoc(MAIN_DOC_REF, defaultInitialData).catch((err) => {
+        const sanitized = sanitizeForFirestore(defaultInitialData);
+        setDoc(MAIN_DOC_REF, {
+          ...sanitized,
+          lastUpdated: new Date().toISOString()
+        }).catch((err) => {
           console.error('Error setting initial data:', err);
         });
         onData(defaultInitialData);

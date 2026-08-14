@@ -1,18 +1,34 @@
 import React from 'react';
 import { Guru } from '../types';
 import { BarcodeCard } from './BarcodeCard';
-import { Printer, X, GraduationCap } from 'lucide-react';
+import { downloadSingleCardPNG } from '../lib/cardExport';
+import { Printer, X, GraduationCap, Download, Check } from 'lucide-react';
 
 interface PrintIdCardModalProps {
   guru: Guru | null;
   onClose: () => void;
+  onToast?: (msg: string, type?: 'success' | 'error' | 'info') => void;
 }
 
-export const PrintIdCardModal: React.FC<PrintIdCardModalProps> = ({ guru, onClose }) => {
+export const PrintIdCardModal: React.FC<PrintIdCardModalProps> = ({ guru, onClose, onToast }) => {
+  const [downloaded, setDownloaded] = React.useState(false);
+
   if (!guru) return null;
 
   const handlePrint = () => {
     window.print();
+  };
+
+  const handleDownloadPNG = () => {
+    try {
+      downloadSingleCardPNG(guru);
+      setDownloaded(true);
+      if (onToast) onToast(`Kartu ${guru.nama} berhasil diunduh (PNG HD)!`, 'success');
+      setTimeout(() => setDownloaded(false), 2500);
+    } catch (e) {
+      console.error(e);
+      if (onToast) onToast('Gagal mengunduh kartu.', 'error');
+    }
   };
 
   return (
@@ -20,11 +36,11 @@ export const PrintIdCardModal: React.FC<PrintIdCardModalProps> = ({ guru, onClos
       <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-gray-100 flex flex-col items-center">
         <div className="w-full flex justify-between items-center mb-4 border-b border-gray-100 pb-3">
           <h3 className="font-bold text-gray-900 text-base flex items-center gap-2">
-            <Printer className="w-5 h-5 text-[#074A69]" /> Preview Kartu Barcode Guru
+            <Printer className="w-5 h-5 text-[#074A69]" /> Preview & Unduh Kartu Guru
           </h3>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition"
+            className="p-1.5 rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
@@ -52,16 +68,23 @@ export const PrintIdCardModal: React.FC<PrintIdCardModalProps> = ({ guru, onClos
           </div>
         </div>
 
-        <div className="w-full flex justify-end gap-3 mt-4 pt-3 border-t border-gray-100">
+        <div className="w-full flex flex-wrap justify-end gap-2 sm:gap-2.5 mt-4 pt-3 border-t border-gray-100">
           <button
             onClick={onClose}
-            className="px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-xs transition"
+            className="px-3.5 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl text-xs transition cursor-pointer"
           >
             Tutup
           </button>
           <button
+            onClick={handleDownloadPNG}
+            className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-semibold rounded-xl text-xs transition shadow-xs flex items-center gap-1.5 cursor-pointer"
+          >
+            {downloaded ? <Check className="w-4 h-4 text-emerald-600" /> : <Download className="w-4 h-4" />}
+            <span>{downloaded ? 'Tersimpan!' : 'Download PNG'}</span>
+          </button>
+          <button
             onClick={handlePrint}
-            className="px-4 py-2 bg-gradient-to-r from-[#074A69] to-[#0c618c] text-white font-semibold rounded-xl text-xs transition shadow-md flex items-center gap-1.5"
+            className="px-3.5 py-2 bg-gradient-to-r from-[#074A69] to-[#0c618c] text-white font-semibold rounded-xl text-xs transition shadow-md flex items-center gap-1.5 cursor-pointer"
           >
             <Printer className="w-4 h-4" /> Cetak Kartu
           </button>

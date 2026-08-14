@@ -1,6 +1,9 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { DatabaseState, Guru, User, Transaksi, Barang } from '../types';
 import { CameraScanner } from './CameraScanner';
+import { HardwareBarcodeGunScanner } from './HardwareBarcodeGunScanner';
+import { saveDatabaseToFirestore } from '../lib/firebase';
+import { playScannerSuccessBeep, playScannerErrorBeep } from '../lib/scannerAudio';
 import {
   Laptop,
   UserCheck,
@@ -18,7 +21,10 @@ import {
   Cloud,
   Users,
   X,
-  Check
+  Check,
+  RefreshCw,
+  Camera,
+  Radio
 } from 'lucide-react';
 
 interface PetugasDashboardProps {
@@ -91,6 +97,8 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
   isFirebaseConnected = true
 }) => {
   const [scannedGuru, setScannedGuru] = useState<Guru | null>(null);
+  const [scannerMode, setScannerMode] = useState<'gun' | 'camera'>('gun');
+  const [soundEnabled, setSoundEnabled] = useState<boolean>(true);
   const [manualInputId, setManualInputId] = useState('');
   const [showGuruPickerModal, setShowGuruPickerModal] = useState(false);
   const [guruPickerSearch, setGuruPickerSearch] = useState('');
@@ -124,11 +132,13 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
     const guru = findGuruSmart(id, db.gurus);
 
     if (guru) {
+      if (soundEnabled) playScannerSuccessBeep();
       setScannedGuru(guru);
-      showToast(`Kartu dikenali: ${guru.nama} (${guru.id})`, 'success');
+      showToast(`Kartu terdeteksi: ${guru.nama} (${guru.id})`, 'success');
       setReturnSelection({});
       setManualInputId('');
     } else {
+      if (soundEnabled) playScannerErrorBeep();
       showToast(`ID / Barcode "${id.trim()}" tidak ditemukan dalam sistem!`, 'error');
     }
   };
@@ -355,6 +365,27 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
     ? db.transaksis.filter((t) => t.guru_id === scannedGuru.id && t.status === 'aktif')
     : [];
 
+  const [isSyncing, setIsSyncing] = useState(false);
+
+  const handleSyncCloud = async () => {
+    setIsSyncing(true);
+    try {
+      const ok = await saveDatabaseToFirestore(db);
+      if (ok) {
+        showToast(
+          `Semua data (${db.gurus.length} Kartu Guru) tersimpan aman di Firebase Cloud!`,
+          'success'
+        );
+      } else {
+        showToast('Gagal sinkronisasi ke Firebase. Cek koneksi.', 'error');
+      }
+    } catch {
+      showToast('Gagal sinkronisasi ke Firebase.', 'error');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-slate-50 w-full text-left overflow-hidden">
       {/* Header */}
@@ -372,35 +403,21 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
         </div>
 
         <div className="flex items-center gap-2.5 sm:gap-3">
-          <span
-            className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold border flex items-center gap-1.5 shadow-2xs ${
+          <button
+            onClick={handleSyncCloud}
+            disabled={isSyncing}
+            className={`px-3 py-1.5 rounded-full text-[11px] sm:text-xs font-bold border flex items-center gap-1.5 shadow-2xs transition cursor-pointer ${
               isFirebaseConnected
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-amber-50 text-amber-700 border-amber-200'
+                ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-200'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-700 border-amber-200'
             }`}
-            title={
-              isFirebaseConnected
-                ? 'Terhubung ke Firebase Realtime Database'
-                : 'Menyimpan lokal (menghubungkan ke cloud...)'
-            }
+            title="Klik untuk sinkronkan seluruh data ke Firebase Cloud"
           >
-            <span className="relative flex h-2 w-2">
-              <span
-                className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${
-                  isFirebaseConnected ? 'bg-emerald-400' : 'bg-amber-400'
-                }`}
-              ></span>
-              <span
-                className={`relative inline-flex rounded-full h-2 w-2 ${
-                  isFirebaseConnected ? 'bg-emerald-500' : 'bg-amber-500'
-                }`}
-              ></span>
-            </span>
-            <Cloud className="w-3.5 h-3.5" />
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
             <span className="hidden sm:inline">
-              {isFirebaseConnected ? 'Firebase Realtime' : 'Menghubungkan...'}
+              {isSyncing ? 'Menyimpan...' : isFirebaseConnected ? 'Firebase Realtime' : 'Sinkronkan'}
             </span>
-          </span>
+          </button>
 
           <span className="bg-gradient-to-r from-[#f0f7fb] to-[#e1f0f7] text-[#074A69] px-3.5 py-1.5 rounded-full text-xs font-bold flex items-center gap-2 border border-[#074A69]/30 shadow-2xs">
             <UserCheck className="w-4 h-4 text-[#074A69]" /> {currentUser.name}
@@ -420,8 +437,48 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 min-h-[440px]">
           {/* Column 1: Scanner */}
           <div className="lg:col-span-1 flex flex-col">
-            <div className="bg-white/90 backdrop-blur-md p-5 rounded-2xl shadow-sm border border-[#074A69]/15 flex flex-col h-full">
-              <CameraScanner onScanSuccess={handleBarcodeScanned} />
+            <div className="bg-white/90 backdrop-blur-md p-4 sm:p-5 rounded-2xl shadow-sm border border-[#074A69]/15 flex flex-col h-full">
+              {/* Scanner Mode Toggle Bar */}
+              <div className="flex bg-slate-100 p-1 rounded-xl mb-4 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setScannerMode('gun')}
+                  className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    scannerMode === 'gun'
+                      ? 'bg-[#074A69] text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <Barcode className="w-3.5 h-3.5" />
+                  <span>Alat Scanner Barcode</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setScannerMode('camera')}
+                  className={`flex-1 py-2 px-2.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    scannerMode === 'camera'
+                      ? 'bg-[#074A69] text-white shadow-xs'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>Kamera Web / HP</span>
+                </button>
+              </div>
+
+              {/* Active Scanner Screen */}
+              {scannerMode === 'gun' ? (
+                <HardwareBarcodeGunScanner
+                  onScanSuccess={handleBarcodeScanned}
+                  gurus={db.gurus}
+                  soundEnabled={soundEnabled}
+                  onToggleSound={() => setSoundEnabled((prev) => !prev)}
+                  lastScannedGuru={scannedGuru}
+                />
+              ) : (
+                <CameraScanner onScanSuccess={handleBarcodeScanned} />
+              )}
 
               {/* Manual Input Input Form */}
               <div className="relative mt-4">
@@ -433,7 +490,7 @@ export const PetugasDashboard: React.FC<PetugasDashboardProps> = ({
                     type="text"
                     value={manualInputId}
                     onChange={(e) => setManualInputId(e.target.value)}
-                    placeholder="Input ID / NIP / Nama Guru..."
+                    placeholder="Input manual ID / NIP / Nama Guru..."
                     className="w-full pl-10 pr-16 border border-[#074A69]/20 rounded-xl p-2.5 text-xs font-mono font-bold focus:border-[#074A69] focus:ring-2 focus:ring-[#074A69]/20 bg-white outline-none"
                   />
                   <button

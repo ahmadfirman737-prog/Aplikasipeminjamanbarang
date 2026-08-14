@@ -22,7 +22,13 @@ export default function App() {
 
     const setupFirebase = async () => {
       try {
-        await initializeFirestoreDatabase();
+        const cloudData = await initializeFirestoreDatabase();
+        if (cloudData) {
+          setDbState(cloudData);
+          saveDatabase(cloudData);
+          setIsFirebaseConnected(true);
+        }
+
         unsubscribe = subscribeToFirestore(
           (cloudDb) => {
             isInternalUpdateRef.current = true;
@@ -88,6 +94,7 @@ export default function App() {
         <PrintIdCardModal
           guru={printGuruCardModal}
           onClose={() => setPrintGuruCardModal(null)}
+          onToast={showToast}
         />
       )}
 
