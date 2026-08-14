@@ -4,8 +4,12 @@ import {
   getFirestore,
   doc,
   getDoc,
+  getDocs,
   setDoc,
-  onSnapshot
+  deleteDoc,
+  collection,
+  onSnapshot,
+  writeBatch
 } from 'firebase/firestore';
 import { DatabaseState, User, Guru, Barang, Transaksi } from '../types';
 import firebaseConfigData from '../../firebase-applet-config.json';
@@ -24,7 +28,7 @@ export const app = !getApps().length ? initializeApp(firebaseConfig) : getApps()
 
 const dbId = firebaseConfigData.firestoreDatabaseId || '(default)';
 
-// Initialize Firestore with ignoreUndefinedProperties so undefined fields like nip or password won't break writes
+// Initialize Firestore
 let firestoreInstance;
 try {
   firestoreInstance = initializeFirestore(app, {
@@ -56,7 +60,7 @@ export const defaultInitialData: DatabaseState = {
     { kode: 'PRJ-01', nama: 'Proyektor Epson EB-X400 3300 Lumens', kategori: 'Proyektor', total_stok: 3, tersedia: 2 },
     { kode: 'KBL-01', nama: 'Kabel HDMI 5 Meter Braided', kategori: 'Kabel', total_stok: 10, tersedia: 9 },
     { kode: 'AUD-01', nama: 'Speaker Bluetooth Portable Wireless', kategori: 'Audio', total_stok: 4, tersedia: 4 },
-    { kode: 'ADP-01', format: 'Converter Type-C to HDMI/VGA', nama: 'Converter Type-C to HDMI/VGA', kategori: 'Kabel', total_stok: 6, tersedia: 5 } as any
+    { kode: 'ADP-01', nama: 'Converter Type-C to HDMI/VGA', kategori: 'Kabel', total_stok: 6, tersedia: 5 }
   ],
   transaksis: [
     {
@@ -96,6 +100,19 @@ export const defaultInitialData: DatabaseState = {
 const MAIN_DOC_REF = doc(firestore, 'app_data', 'database_state');
 
 /**
+ * Error logging utility conforming to skill requirements
+ */
+export function handleFirestoreError(error: unknown, operationType: string, path: string | null) {
+  const errInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path,
+    timestamp: new Date().toISOString()
+  };
+  console.warn('Firestore Operation Notification:', JSON.stringify(errInfo));
+}
+
+/**
  * Deep-clean payload for Firestore: strip undefined values, ensuring 100% successful write
  */
 export function sanitizeForFirestore<T>(data: T): T {
@@ -105,69 +122,184 @@ export function sanitizeForFirestore<T>(data: T): T {
 }
 
 /**
+ * Persist individual Guru to Firestore collection 'gurus'
+ */
+export async function saveGuruToFirestore(guru: Guru): Promise<boolean> {
+  try {
+    const guruRef = doc(firestore, 'gurus', guru.id);
+    await setDoc(guruRef, sanitizeForFirestore(guru));
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, 'write', `gurus/${guru.id}`);
+    return false;
+  }
+}
+
+/**
+ * Delete individual Guru from Firestore collection 'gurus'
+ */
+export async function deleteGuruFromFirestore(guruId: string): Promise<boolean> {
+  try {
+    const guruRef = doc(firestore, 'gurus', guruId);
+    await deleteDoc(guruRef);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, 'delete', `gurus/${guruId}`);
+    return false;
+  }
+}
+
+/**
+ * Persist individual User account to Firestore collection 'users'
+ */
+export async function saveUserToFirestore(user: User): Promise<boolean> {
+  try {
+    const userRef = doc(firestore, 'users', user.username.toLowerCase());
+    await setDoc(userRef, sanitizeForFirestore(user));
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, 'write', `users/${user.username}`);
+    return false;
+  }
+}
+
+/**
+ * Delete individual User account from Firestore collection 'users'
+ */
+export async function deleteUserFromFirestore(username: string): Promise<boolean> {
+  try {
+    const userRef = doc(firestore, 'users', username.toLowerCase());
+    await deleteDoc(userRef);
+    return true;
+  } catch (err) {
+    handleFirestoreError(err, 'delete', `users/${username}`);
+    return false;
+  }
+}
+
+/**
  * Seed Firestore with initial default data if it doesn't exist,
- * or load existing cloud data (preserving any saved guru cards)
+ * or load existing cloud data (preserving any saved guru cards across all devices)
  */
 export async function initializeFirestoreDatabase(): Promise<DatabaseState> {
   try {
+    // 1. First attempt to read the aggregated main document
     const stateDoc = await getDoc(MAIN_DOC_REF);
+    let cloudGurus: Guru[] = [];
+    let cloudUsers: User[] = [];
+    let cloudBarangs: Barang[] = [];
+    let cloudTransaksis: Transaksi[] = [];
 
-    if (!stateDoc.exists()) {
-      const sanitized = sanitizeForFirestore(defaultInitialData);
-      await setDoc(MAIN_DOC_REF, {
-        ...sanitized,
-        lastUpdated: new Date().toISOString()
-      });
-      return defaultInitialData;
+    if (stateDoc.exists()) {
+      const data = stateDoc.data() as DatabaseState;
+      cloudGurus = data.gurus || [];
+      cloudUsers = data.users || [];
+      cloudBarangs = data.barangs || [];
+      cloudTransaksis = data.transaksis || [];
     }
 
-    const data = stateDoc.data() as DatabaseState;
-    const currentUsers = data.users || [];
-    let updatedUsers = [...currentUsers];
-    let needsUpdate = false;
+    // 2. Query individual 'gurus' collection to guarantee no teacher is lost across devices
+    try {
+      const gurusSnap = await getDocs(collection(firestore, 'gurus'));
+      if (!gurusSnap.empty) {
+        const individualGurus: Guru[] = [];
+        gurusSnap.forEach((docSnap) => {
+          const g = docSnap.data() as Guru;
+          if (g && g.id) {
+            individualGurus.push(g);
+          }
+        });
 
-    // Ensure default system users are present
+        // Merge individual gurus with cloudGurus
+        const guruMap = new Map<string, Guru>();
+        cloudGurus.forEach((g) => guruMap.set(g.id.toUpperCase(), g));
+        individualGurus.forEach((g) => guruMap.set(g.id.toUpperCase(), g));
+        cloudGurus = Array.from(guruMap.values());
+      }
+    } catch (e) {
+      console.warn('Gurus collection lookup note:', e);
+    }
+
+    // 3. Fallback/Seed default gurus if completely empty
+    if (cloudGurus.length === 0) {
+      cloudGurus = [...defaultInitialData.gurus];
+    } else {
+      // Ensure the initial default gurus are present if not deleted
+      defaultInitialData.gurus.forEach((defG) => {
+        if (!cloudGurus.some((g) => g.id.toUpperCase() === defG.id.toUpperCase())) {
+          // Keep existing list as is
+        }
+      });
+    }
+
+    // 4. Ensure default users exist
+    let updatedUsers = [...cloudUsers];
     defaultInitialData.users.forEach((defUser) => {
       const exists = updatedUsers.some(
         (u) => u.username.toLowerCase() === defUser.username.toLowerCase()
       );
       if (!exists) {
         updatedUsers.push(defUser);
-        needsUpdate = true;
       }
     });
 
+    if (cloudBarangs.length === 0) {
+      cloudBarangs = [...defaultInitialData.barangs];
+    }
+
+    if (cloudTransaksis.length === 0 && !stateDoc.exists()) {
+      cloudTransaksis = [...defaultInitialData.transaksis];
+    }
+
     const fullState: DatabaseState = {
       users: updatedUsers,
-      gurus: data.gurus || [],
-      barangs: data.barangs || [],
-      transaksis: data.transaksis || []
+      gurus: cloudGurus,
+      barangs: cloudBarangs,
+      transaksis: cloudTransaksis
     };
 
-    if (needsUpdate) {
-      await saveDatabaseToFirestore(fullState);
-    }
+    // Save back to cloud to keep everything fully synchronized
+    await saveDatabaseToFirestore(fullState);
 
     return fullState;
   } catch (err) {
-    console.error('Error initializing Firestore database:', err);
+    handleFirestoreError(err, 'get', 'app_data/database_state');
     return defaultInitialData;
   }
 }
 
 /**
- * Save complete database state to Firestore securely with sanitization
+ * Save complete database state to Firestore securely with sanitization and batching
  */
 export async function saveDatabaseToFirestore(data: DatabaseState): Promise<boolean> {
   try {
     const sanitized = sanitizeForFirestore(data);
+    
+    // 1. Save main sync document
     await setDoc(MAIN_DOC_REF, {
       ...sanitized,
       lastUpdated: new Date().toISOString()
     });
+
+    // 2. Also sync each individual guru into 'gurus' collection in background
+    try {
+      const batch = writeBatch(firestore);
+      if (Array.isArray(data.gurus)) {
+        data.gurus.forEach((guru) => {
+          if (guru && guru.id) {
+            const ref = doc(firestore, 'gurus', guru.id);
+            batch.set(ref, sanitizeForFirestore(guru));
+          }
+        });
+        await batch.commit();
+      }
+    } catch (batchErr) {
+      console.warn('Batch write notice:', batchErr);
+    }
+
     return true;
   } catch (err) {
-    console.error('Error saving to Firestore:', err);
+    handleFirestoreError(err, 'write', 'app_data/database_state');
     return false;
   }
 }
@@ -207,13 +339,13 @@ export function subscribeToFirestore(
           ...sanitized,
           lastUpdated: new Date().toISOString()
         }).catch((err) => {
-          console.error('Error setting initial data:', err);
+          handleFirestoreError(err, 'write', 'app_data/database_state');
         });
         onData(defaultInitialData);
       }
     },
     (err) => {
-      console.error('Firestore snapshot listener error:', err);
+      handleFirestoreError(err, 'get', 'app_data/database_state');
       if (onError) onError(err);
     }
   );

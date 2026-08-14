@@ -3,6 +3,7 @@
     "users": {
       "title": "Users",
       "description": "User credentials and roles",
+      "type": "object",
       "properties": {
         "username": { "type": "string" },
         "name": { "type": "string" },
@@ -14,6 +15,7 @@
     "gurus": {
       "title": "Gurus",
       "description": "Teacher data and barcode IDs",
+      "type": "object",
       "properties": {
         "id": { "type": "string" },
         "nama": { "type": "string" },
@@ -25,6 +27,7 @@
     "barangs": {
       "title": "Barangs",
       "description": "Inventory items in computer lab",
+      "type": "object",
       "properties": {
         "kode": { "type": "string" },
         "nama": { "type": "string" },
@@ -37,6 +40,7 @@
     "transaksis": {
       "title": "Transaksis",
       "description": "Borrowing and return transactions",
+      "type": "object",
       "properties": {
         "id": { "type": "string" },
         "guru_id": { "type": "string" },
@@ -48,6 +52,28 @@
         "status": { "type": "string", "enum": ["aktif", "selesai"] }
       },
       "required": ["id", "guru_id", "barang_kode", "jumlah", "tgl_pinjam", "status"]
+    }
+  },
+  "firestore": {
+    "/gurus/{guruId}": {
+      "schema": { "$ref": "#/entities/gurus" },
+      "description": "Individual teacher records and barcode card data"
+    },
+    "/users/{username}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "System accounts for admin and petugas"
+    },
+    "/barangs/{barangKode}": {
+      "schema": { "$ref": "#/entities/barangs" },
+      "description": "Lab equipment inventory"
+    },
+    "/transaksis/{transaksiId}": {
+      "schema": { "$ref": "#/entities/transaksis" },
+      "description": "Borrowing transaction logs"
+    },
+    "/app_data/{docId}": {
+      "schema": { "$ref": "#/entities/users" },
+      "description": "Aggregated application state for real-time synchronization across devices"
     }
   }
 }

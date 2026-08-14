@@ -1,7 +1,14 @@
 import React, { useState } from 'react';
 import { DatabaseState, Guru, Barang, User } from '../types';
 import { exportLaporanToExcel, exportLaporanToPDF } from '../lib/export';
-import { saveDatabaseToFirestore } from '../lib/firebase';
+import {
+  saveDatabaseToFirestore,
+  saveGuruToFirestore,
+  deleteGuruFromFirestore,
+  saveUserToFirestore,
+  deleteUserFromFirestore,
+  initializeFirestoreDatabase
+} from '../lib/firebase';
 import { downloadSingleCardPNG, downloadAllCardsPDF } from '../lib/cardExport';
 import {
   IdCard,
@@ -116,6 +123,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
 
     setDb((prev) => ({ ...prev, gurus: [...prev.gurus, newGuru] }));
+    saveGuruToFirestore(newGuru).catch((err) => console.error('Error saving guru to cloud:', err));
     showToast(`Guru ${newGuru.nama} (${newGuru.id}) berhasil ditambahkan!`, 'success');
     setShowAddGuruModal(false);
     setNewGuruId('');
@@ -149,6 +157,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
       transaksis: prev.transaksis.map((t) => (t.guru_id === oldId ? { ...t, guru_id: cleanId } : t))
     }));
 
+    if (oldId !== cleanId) {
+      deleteGuruFromFirestore(oldId).catch((err) => console.error('Error deleting old guru ID in cloud:', err));
+    }
+    saveGuruToFirestore(updatedGuru).catch((err) => console.error('Error updating guru in cloud:', err));
+
     showToast(`Data guru ${updatedGuru.nama} berhasil diperbarui!`, 'success');
     setShowEditGuruModal(null);
     setNewGuruId('');
@@ -160,6 +173,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleDeleteGuru = (id: string) => {
     if (confirm(`Apakah Anda yakin ingin menghapus data guru dengan ID ${id}?`)) {
       setDb((prev) => ({ ...prev, gurus: prev.gurus.filter((g) => g.id !== id) }));
+      deleteGuruFromFirestore(id).catch((err) => console.error('Error deleting guru from cloud:', err));
       showToast('Data guru berhasil dihapus', 'info');
     }
   };
@@ -238,6 +252,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     };
 
     setDb((prev) => ({ ...prev, users: [...prev.users, newUser] }));
+    saveUserToFirestore(newUser).catch((err) => console.error('Error saving user to cloud:', err));
     showToast(`Akun ${newUser.username} berhasil dibuat!`, 'success');
     setShowAddAkunModal(false);
     setAkunUser('');
@@ -250,20 +265,27 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     e.preventDefault();
     if (!showEditAkunModal) return;
 
+    let updatedUserObj: User | null = null;
     setDb((prev) => {
       const updatedUsers = prev.users.map((u) => {
         if (u.username === showEditAkunModal.username) {
-          return {
+          const updated: User = {
             ...u,
             name: akunNama.trim(),
             role: akunRole,
             password: akunPass.trim() !== '' ? akunPass : u.password
           };
+          updatedUserObj = updated;
+          return updated;
         }
         return u;
       });
       return { ...prev, users: updatedUsers };
     });
+
+    if (updatedUserObj) {
+      saveUserToFirestore(updatedUserObj).catch((err) => console.error('Error updating user in cloud:', err));
+    }
 
     showToast('Data akun berhasil diperbarui', 'success');
     setShowEditAkunModal(null);
@@ -276,6 +298,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     }
     if (confirm(`Hapus akun ${username}?`)) {
       setDb((prev) => ({ ...prev, users: prev.users.filter((u) => u.username !== username) }));
+      deleteUserFromFirestore(username).catch((err) => console.error('Error deleting user from cloud:', err));
       showToast('Akun berhasil dihapus', 'info');
     }
   };
@@ -370,9 +393,13 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsSyncing(true);
     try {
       const ok = await saveDatabaseToFirestore(db);
+      const latestData = await initializeFirestoreDatabase();
+      if (latestData) {
+        setDb(latestData);
+      }
       if (ok) {
         showToast(
-          `Semua data (${db.gurus.length} Kartu Guru) tersimpan permanen di Firebase Cloud!`,
+          `Semua data (${latestData?.gurus.length || db.gurus.length} Akun & Guru) tersimpan permanen & tersinkron di Cloud Firestore!`,
           'success'
         );
       } else {

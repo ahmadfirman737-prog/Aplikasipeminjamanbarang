@@ -59,7 +59,10 @@ export default function App() {
     setDbState((prevDb) => {
       const nextDb = typeof action === 'function' ? action(prevDb) : action;
       saveDatabase(nextDb);
-      saveDatabaseToFirestore(nextDb);
+      // Immediately replicate changes to Firebase Firestore across all devices
+      saveDatabaseToFirestore(nextDb).catch((err) => {
+        console.error('Failed to sync state to Firestore:', err);
+      });
       return nextDb;
     });
   };
